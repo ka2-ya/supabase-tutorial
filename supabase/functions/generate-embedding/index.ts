@@ -2,6 +2,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
+// 共通CORSヘルパーをインポート
+import {
+  getCorsHeaders,
+  handleCorsPreflightRequest,
+} from '../_shared/cors.ts'
+
 /**
  * Edge Function: generate-embedding
  *
@@ -29,24 +35,6 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
  * }
  */
 
-// CORS対応のヘッダー
-// 本番環境では ALLOWED_ORIGIN 環境変数を設定してください
-const getAllowedOrigin = (requestOrigin: string | null): string => {
-  const allowedOrigins = [
-    'http://localhost:3000',
-    Deno.env.get('ALLOWED_ORIGIN'),
-  ].filter(Boolean) as string[]
-
-  return requestOrigin && allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0]
-}
-
-const getCorsHeaders = (requestOrigin: string | null) => ({
-  'Access-Control-Allow-Origin': getAllowedOrigin(requestOrigin),
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-})
-
 interface RequestBody {
   title: string
   content: string
@@ -65,13 +53,11 @@ interface OpenAIEmbeddingResponse {
 }
 
 Deno.serve(async (req) => {
-  const origin = req.headers.get('Origin')
-  const corsHeaders = getCorsHeaders(origin)
+  // CORS preflight リクエストの処理
+  const corsResponse = handleCorsPreflightRequest(req)
+  if (corsResponse) return corsResponse
 
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const corsHeaders = getCorsHeaders(req)
 
   try {
     // 環境変数の取得

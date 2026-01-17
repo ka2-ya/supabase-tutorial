@@ -2,6 +2,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
+// 共通CORSヘルパーをインポート
+import {
+  getCorsHeaders,
+  handleCorsPreflightRequest,
+} from '../_shared/cors.ts'
+
 /**
  * Edge Function: semantic-search
  *
@@ -42,24 +48,6 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
  * }
  */
 
-// CORS対応のヘッダー
-// 本番環境では ALLOWED_ORIGIN 環境変数を設定してください
-const getAllowedOrigin = (requestOrigin: string | null): string => {
-  const allowedOrigins = [
-    'http://localhost:3000',
-    Deno.env.get('ALLOWED_ORIGIN'),
-  ].filter(Boolean) as string[]
-
-  return requestOrigin && allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0]
-}
-
-const getCorsHeaders = (requestOrigin: string | null) => ({
-  'Access-Control-Allow-Origin': getAllowedOrigin(requestOrigin),
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-})
-
 interface RequestBody {
   query: string
   matchThreshold?: number
@@ -87,13 +75,11 @@ interface SearchResult {
 }
 
 Deno.serve(async (req) => {
-  const origin = req.headers.get('Origin')
-  const corsHeaders = getCorsHeaders(origin)
+  // CORS preflight リクエストの処理
+  const corsResponse = handleCorsPreflightRequest(req)
+  if (corsResponse) return corsResponse
 
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const corsHeaders = getCorsHeaders(req)
 
   const startTime = performance.now()
 
@@ -181,12 +167,13 @@ Deno.serve(async (req) => {
     console.log(`[semantic-search] Tokens used: ${embeddingData.usage.total_tokens}`)
 
     // ベクトル類似度検索を実行
+    // セキュリティ: match_documents関数内でauth.uid()を直接参照するため、
+    // クライアントからuser_idを渡す必要がない（user_id偽装を防止）
     const { data: results, error: searchError } = await supabase
       .rpc('match_documents', {
         query_embedding: queryEmbedding,
         match_threshold: matchThreshold,
         match_count: matchCount,
-        filter_user_id: user.id,
       })
 
     if (searchError) {

@@ -5,34 +5,22 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
+// 共通CORSヘルパーをインポート
+// 実際の開発ではCORSヘルパーを別ファイルに分けると管理しやすい
+import {
+  getCorsHeaders,
+  handleCorsPreflightRequest,
+  createErrorResponse,
+} from '../_shared/cors.ts'
+
 console.log("Hello from Functions!")
 
-// CORS対応のヘッダー
-// 本番環境では ALLOWED_ORIGIN 環境変数を設定してください
-const getAllowedOrigin = (requestOrigin: string | null): string => {
-  const allowedOrigins = [
-    'http://localhost:3000',
-    Deno.env.get('ALLOWED_ORIGIN'),
-  ].filter(Boolean) as string[]
-
-  return requestOrigin && allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0]
-}
-
-const getCorsHeaders = (requestOrigin: string | null) => ({
-  'Access-Control-Allow-Origin': getAllowedOrigin(requestOrigin),
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-})
-
 Deno.serve(async (req) => {
-  const origin = req.headers.get('Origin')
-  const corsHeaders = getCorsHeaders(origin)
+  // CORS preflight リクエストの処理
+  const corsResponse = handleCorsPreflightRequest(req)
+  if (corsResponse) return corsResponse
 
-  // OPTIONSリクエスト（CORS preflight）の処理
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const corsHeaders = getCorsHeaders(req)
 
   try {
     // リクエストボディを取得

@@ -6,6 +6,13 @@
  * - データ型の選択
  * - デフォルト値の設定
  * - タイムスタンプの自動設定
+ *
+ * ⚠️ セキュリティ警告:
+ * このマイグレーションは学習用のためRLSポリシーを作成していません。
+ * 本番環境では 20260104000001_secure_rls_policies.sql のような
+ * auth.uid() を使ったユーザーごとの制限を必ず適用してください。
+ *
+ * 例: USING (auth.uid() = user_id)
  */
 
 -- ==========================================
@@ -37,6 +44,16 @@ CREATE TABLE IF NOT EXISTS messages (
 
 -- RLSを有効化
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+/**
+ * ⚠️ Realtime + RLS の注意点:
+ *
+ * Realtime機能はRLSの影響を受けます。
+ * - SELECTポリシーが正しく設定されていないと、リアルタイムの変更がクライアントに届きません
+ * - ユーザーがRealtimeでデータを受信するには、そのデータに対するSELECT権限が必要です
+ *
+ * 詳細: https://supabase.com/docs/guides/realtime/postgres-changes#row-level-security
+ */
 
 -- ==========================================
 -- Storageバケットの作成

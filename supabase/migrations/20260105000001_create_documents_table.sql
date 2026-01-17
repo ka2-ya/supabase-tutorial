@@ -95,20 +95,23 @@ CREATE TRIGGER update_documents_updated_at
 -- ==========================================
 
 /**
- * 意味検索関数
+ * 意味検索関数（セキュア版）
  *
  * @param query_embedding: 検索クエリの埋め込みベクトル
  * @param match_threshold: 類似度の閾値（0〜1、デフォルト0.5）
  * @param match_count: 返す結果の最大数（デフォルト10）
- * @param filter_user_id: フィルタリングするユーザーID（RLS適用）
  *
  * @returns: 類似度の高い順にドキュメントを返す
+ *
+ * セキュリティ:
+ * - auth.uid() を直接参照することで、クライアントからのuser_id偽装を防止
+ * - filter_user_idパラメータを受け取る方式よりも安全
+ * - RLSと組み合わせることで二重のセキュリティを実現
  */
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.5,
-  match_count int DEFAULT 10,
-  filter_user_id uuid DEFAULT NULL
+  match_count int DEFAULT 10
 )
 RETURNS TABLE (
   id bigint,
@@ -120,8 +123,15 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 STABLE
+SECURITY DEFINER  -- 関数実行時にセキュリティコンテキストを維持
+SET search_path = public  -- SQLインジェクション対策
 AS $$
 BEGIN
+  -- 認証チェック: ログインしていない場合は空の結果を返す
+  IF auth.uid() IS NULL THEN
+    RETURN;
+  END IF;
+
   RETURN QUERY
   SELECT
     documents.id,
@@ -133,8 +143,9 @@ BEGIN
     documents.created_at
   FROM documents
   WHERE
-    -- RLS: ユーザーフィルタリング
-    (filter_user_id IS NULL OR documents.user_id = filter_user_id)
+    -- セキュリティ: auth.uid()を直接参照してユーザーフィルタリング
+    -- クライアントから渡されるuser_idではなく、認証済みユーザーIDを使用
+    documents.user_id = auth.uid()
     -- 類似度閾値フィルタリング
     AND 1 - (documents.embedding <=> query_embedding) > match_threshold
   ORDER BY documents.embedding <=> query_embedding ASC
